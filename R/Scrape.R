@@ -1,4 +1,3 @@
-
 # Clear the environment
 rm(list=ls())
 
