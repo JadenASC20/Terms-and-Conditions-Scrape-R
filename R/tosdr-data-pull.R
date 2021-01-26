@@ -7,9 +7,12 @@ library(rvest)
 
 
 #### Pull Data ---------------------------------------------------------------------------------------------------
+# TODO: Adding caching to the loading of data!
+force_load <- FALSE
+
 json_data <-
   # Gets data from tosdr api
-  GET("https://tosdr.org/api/1/all.json")$content %>% 
+  GET("https://raw.githubusercontent.com/tosdr/tosdr.org/master/api/1/all.json")$content %>% 
   # Translate raw byte result to stringified json
   rawToChar() %>% 
   # Converts stringified json to list object
