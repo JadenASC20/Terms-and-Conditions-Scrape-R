@@ -10,14 +10,73 @@ library(rvest)
 # TODO: Adding caching to the loading of data!
 force_load <- FALSE
 
-json_data <-
+json_keys <-
   # Gets data from tosdr api
   GET("https://raw.githubusercontent.com/tosdr/tosdr.org/master/api/1/all.json")$content %>% 
   # Translate raw byte result to stringified json
   rawToChar() %>% 
   # Converts stringified json to list object
-  fromJSON()
+  fromJSON() %>% 
+  # Get JSON keys which has the names of the urls that tosdr has analyzed
+  names() %>% 
+  # Format the text of the keys to match a json file name that could plausibly work for the new API
+  str_remove("tosdr/review/") %>% 
+  str_remove("\\..+$") %>% 
+  str_remove("https://") %>% 
+  str_remove("http://") %>% 
+  str_c(".json") %>% 
+  unique()
 
+# Remove the first 3 json keys as they have nothing to do with potential API endpoints
+json_keys <- json_keys[-c(1:3)]
+
+# Logs any errors that occur during json pull from tosdr api
+log_json_pull_error <- function(endpoint, code, message) {
+  fname <- file.path("data-raw", "json-pull-errors.csv")
+  # If file does not exist then create the file and write the header columns
+  if (!file.exists(fname))
+    writeLines("endpoint,error_code,error_message", fname)
+  
+  # Write the endpoint that failed, the error code, and the error message to this log file
+  data.frame(endpoint = endpoint,
+             error_code = code,
+             error_message = message,
+             stringsAsFactors = FALSE) %>% 
+    write_csv(fname, append = TRUE)
+  invisible()
+}
+
+json_list <-
+  # Apply this function to every potential json filename on the api
+  map(json_keys, function(json_endpoint) {
+    # tryCatch means we are trying the following block of code
+    tryCatch({
+      json_data <-
+        GET(paste0("https://api.tosdr.org/v1/service/", json_endpoint))$content %>% 
+        # Translate raw byte result to stringified json
+        rawToChar() %>% 
+        # Converts stringified json to list object
+        fromJSON()
+      # If there is no error object in the returned json then just return the json that was pulled from the api
+      if (is.null(json_data$error)) {
+        json_data
+      } else {
+      # Otherwise, log the error that was returned from the API
+        log_json_pull_error(json_endpoint, json_data$code, json_data$message)
+      }
+    }, error = function(e) {
+      # Log error if one occurs
+      log_json_pull_error(json_endpoint, "Scripting Error", e$message)
+    })
+  })
+
+# Name the values of our returned json scrape based on the json endpoints hit
+names(json_list) <- json_keys
+# Remove empty json values that correspond to failed data pulls
+json_list_clean <- json_list[lengths(json_list) != 0]
+
+
+# Old Code --------------------------
 url_data <-
   # map_df loops through a list and then combines the results of each loop into a data.frame
   # see ?map_df for examples and more info
