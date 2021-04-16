@@ -67,7 +67,7 @@ get_all_services_JSON <- function() {
 all_json_data <- get_all_services_JSON()
 # updated_at, is_comprehensively_reviewed, rating, documents.text, documents.url, 
 # documents.updated_at, documents.service_id, documents.reviewed
-
+# service_id: all_json_data$paypal$parameters$document[[1]]$service_id
 # entire json in points
 
 
