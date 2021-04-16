@@ -65,12 +65,97 @@ get_all_services_JSON <- function() {
 }
 
 all_json_data <- get_all_services_JSON()
+
+# Data Retrieval -------------------------------------------------------------------
 # updated_at, is_comprehensively_reviewed, rating, documents.text, documents.url, 
 # documents.updated_at, documents.service_id, documents.reviewed
 # service_id: all_json_data$paypal$parameters$document[[1]]$service_id
 # entire json in points
+na_if_null <- function(val) {
+  if (is.null(val))
+    NA
+  else
+    val
+}
 
+list_of_overall_dfs <- list()
+list_of_point_dfs <- list()
+# Given a json object pulled down from tosdr
+# Create a data.frame from it
+retrieve_overall_data_from_json <- function(json) {
+  json_data <- json$parameters
+  metadata <- json_data$`_source`
+  slug <- metadata$slug[[1]]
+  data.frame(
+    slug = slug,
+    rating = metadata$rating[[1]],
+    created_at = metadata$created_at[[1]],
+    updated_at = metadata$updated_at[[1]],
+    is_comprehensively_reviewed = metadata$is_comprehensively_reviewed[[1]]
+  )
+}
+retrieve_points_data_from_json <- function(json, slug) {
+  json_data <- json$parameters
+  points <- json_data$points
+  map_df(points, function(point) {
+    case <- point$case
+    data.frame(
+      slug = slug,
+      point_id = point$id,
+      needs_moderation = point$needsModeration,
+      quote_text = point$quote %>% na_if_null(),
+      case_id = case$id,
+      title = case$title,
+      classification = case$classification,
+      score = case$score,
+      created_at = case$created_at,
+      updated_at = case$updated_at
+    )
+  })
+}
 
-services_json <- load_json('https://edit.tosdr.org/api/v1/services', "services.json")
-points_json <- load_json('https://edit.tosdr.org/api/v1/points', "points.json")
+for (json in all_json_data) {
+  slug <- json$parameters$`_source`$slug[[1]]
+  list_of_overall_dfs[[slug]] <- retrieve_overall_data_from_json(json)
+  list_of_point_dfs[[slug]] <- retrieve_points_data_from_json(json, slug)
+}
+overall_df <- 
+  map_df(list_of_overall_dfs, function(df) {
+    df
+  })
+points_df <-
+  map_df(list_of_point_dfs, function(df) {
+    df
+  })
 
+# Data Cleaning -------------------------------------------------------------------
+strip_html_tags <- function(html_string) {
+  return(gsub("<.*?>", "", html_string))
+}
+remove_html_tags <- function(df) {
+  df %>% 
+    mutate(quote_text = strip_html_tags(quote_text))
+}
+keep_points_that_dont_need_moderation <- function(df) {
+  df %>% 
+    filter(!needs_moderation)
+}
+remove_non_alphanumeric_chars <- function(df) {
+  df %>% 
+    mutate(quote_text = str_remove_all(quote_text, "[^[:alnum:] ]"))
+}
+remove_empty_quote_text_points <- function(df) {
+  df %>% 
+    filter(!is.na(quote_text)) %>% 
+    filter(str_trim(quote_text) != "")
+}
+
+clean_data <- function(df) {
+  df %>% 
+    remove_html_tags() %>% 
+    keep_points_that_dont_need_moderation() %>% 
+    remove_non_alphanumeric_chars() %>%
+    remove_empty_quote_text_points()
+}
+
+clean_points_df <- clean_data(points_df)
