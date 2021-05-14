@@ -196,7 +196,3 @@ glmnet_classifier = cv.glmnet(
 train_predictions = predict(glmnet_classifier, X, type = 'response')[, 1]
 hist(train_predictions[y == "bad"])
 hist(train_predictions[y == "good"])
-
-test_sentence = "We steal all your data."
-test_vector = cfv$transform(test_sentence)
-pred = predict(glmnet_classifier, test_vector, type = 'response')[, 1]
