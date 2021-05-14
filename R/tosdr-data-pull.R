@@ -149,13 +149,50 @@ remove_empty_quote_text_points <- function(df) {
     filter(!is.na(quote_text)) %>% 
     filter(str_trim(quote_text) != "")
 }
+lowercase_text <- function(df) {
+  df %>%
+    mutate(quote_text = tolower(quote_text))
+}
 
 clean_data <- function(df) {
   df %>% 
     remove_html_tags() %>% 
     keep_points_that_dont_need_moderation() %>% 
     remove_non_alphanumeric_chars() %>%
-    remove_empty_quote_text_points()
+    remove_empty_quote_text_points() %>%
+    lowercase_text
 }
 
 clean_points_df <- clean_data(points_df)
+
+
+# Vectorize quote text
+# See: https://cran.r-project.org/web/packages/superml/vignettes/Guide-to-CountVectorizer.html
+library(superml)
+library(glmnet)
+
+cfv <- CountVectorizer$new(max_features=10000, remove_stopwords=FALSE)
+cf_mat <- cfv$fit_transform(clean_points_df$quote_text)
+
+# Classify good vs. bad
+# See: https://cran.r-project.org/web/packages/text2vec/vignettes/text-vectorization.html
+
+idx = (clean_points_df$classification == "good") | (clean_points_df$classification == "bad")
+X = cf_mat[idx, ]
+y = clean_points_df$classification[idx]
+
+glmnet_classifier = cv.glmnet(
+  x = X,
+  y = y,
+  family = 'binomial',
+  alpha = 1,  # L1 penalty
+  type.measure = "auc",
+  nfolds = 4,
+  thresh = 1e-3,  # high value is less accurate, but has faster training
+  maxit = 1e3,
+)
+
+# In-sample
+train_predictions = predict(glmnet_classifier, X, type = 'response')[, 1]
+hist(train_predictions[y == "bad"])
+hist(train_predictions[y == "good"])
