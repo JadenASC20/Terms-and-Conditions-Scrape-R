@@ -43,7 +43,8 @@ def retrieve_points_data_from_json(input_json: dict, slug: str) -> pd.DataFrame:
         for point in points
     ]
 
-    return pd.concat(df_list).reset_index(drop=True)
+    if len(df_list) > 0: 
+        return pd.concat(df_list).reset_index(drop=True)
 
 
 def get_all_file_dicts() -> None:
@@ -51,7 +52,7 @@ def get_all_file_dicts() -> None:
     all_json_file_paths = glob.glob('data-raw/*.json')
     all_dicts = []
     for file_path in all_json_file_paths:
-        with open(file_path, "r") as fp:
+        with open(file_path, "r", encoding="utf8") as fp:
             file_dict = json.load(fp)
         all_dicts.append(file_dict)
 
@@ -61,31 +62,45 @@ def get_all_file_dicts() -> None:
 def get_slug(input_dict: dict) -> str:
     """Get slug from input dict, which can have multiple formats."""
 
-    if "slug" in input_dict["parameters"].keys():
-        return input_dict["parameters"]["slug"][0]
-    elif "slug" in input_dict["parameters"]["_source"].keys():
-        return input_dict["parameters"]["_source"]["slug"][0]
-    else:
-        raise ValueError("This dict is formatted differently.")
+    # checks if the parameters is a key in the input dictionary
+    if "parameters" in input_dict.keys():
 
+        # checks if the slug is a key in the dictionary input
+        if "slug" in input_dict["parameters"].keys():
+            return input_dict["parameters"]["slug"][0]
+        # checks if the source exists, and if the slug exists in the source
+        elif "_source" in input_dict["parameters"].keys():
+            if "slug" in input_dict["parameters"]["_source"].keys():
+                return input_dict["parameters"]["_source"]["slug"][0]
+
+    else:
+        #TODO: investigate further
+        # raise ValueError("This" + str(input_dict["parameters"].keys()) + "is formatted differently.")
+        print("This is formatted differently.")
 
 def main():
     all_dicts = get_all_file_dicts()
 
     overall_df_list = []
     points_df_list = []
+
     for company_dict in tqdm(all_dicts):
         slug = get_slug(company_dict)
-        if "_source" in company_dict["parameters"]:
-            sub_overall_df = retrieve_overall_data_from_json(company_dict, slug)
-            sub_points_df = retrieve_points_data_from_json(company_dict, slug)
-            overall_df_list.append(sub_overall_df)
-            points_df_list.append(sub_points_df)
+
+        if "parameters" in company_dict.keys():
+            if "_source" in company_dict["parameters"]:
+                sub_overall_df = retrieve_overall_data_from_json(company_dict, slug)
+                sub_points_df = retrieve_points_data_from_json(company_dict, slug)
+                overall_df_list.append(sub_overall_df)
+                points_df_list.append(sub_points_df)
 
     overall_df = pd.concat(overall_df_list).reset_index(drop=True)
     points_df = pd.concat(points_df_list).reset_index(drop=True)
 
-    print(points_df.head())
+    points_df["quote_text"] = points_df["quote_text"].str.lower()
+    #TODO: function that makes it lowercase, takes in a points df and returns it as lowercase
+
+    print(points_df.head()["quote_text"])
 
 
 if __name__ == "__main__":
