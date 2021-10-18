@@ -1,5 +1,30 @@
+#TODO: down all data from tosdr.org
+
+# Session 1 9-27-21
+#TODO: cleaning steps to the data pipeline
+
+# Session 2
+#TODO:tokenize the data
+#TODO: run bag of words model on
+
+# Session 3
+#TODO: run tf idf on the model
+#TODO: figuring out how to present the data if were satifies, otherwise we look for more advanced models
+
+# Session 4
+#TODO: Pulling down the data
+
+import re
 import glob
 import json
+import nltk
+
+nltk.download('punkt')
+from nltk.corpus import stopwords
+nltk.download('stopwords')
+print(stopwords.words('english'))
+stop_words = set(stopwords.words("english"))
+from sklearn.feature_extraction.text import CountVectorizer
 
 import pandas as pd
 from tqdm import tqdm
@@ -49,7 +74,7 @@ def retrieve_points_data_from_json(input_json: dict, slug: str) -> pd.DataFrame:
 
 def get_all_file_dicts() -> None:
     """Collect dicts for all files into a list."""
-    all_json_file_paths = glob.glob('data-raw/*.json')
+    all_json_file_paths = glob.glob('Terms-and-Conditions-Scrape-R/data-raw/*.json')
     all_dicts = []
     for file_path in all_json_file_paths:
         with open(file_path, "r", encoding="utf8") as fp:
@@ -60,6 +85,7 @@ def get_all_file_dicts() -> None:
 
 
 def get_slug(input_dict: dict) -> str:
+    #the arrow -> tells us the data type that is returned
     """Get slug from input dict, which can have multiple formats."""
 
     # checks if the parameters is a key in the input dictionary
@@ -78,9 +104,11 @@ def get_slug(input_dict: dict) -> str:
         # raise ValueError("This" + str(input_dict["parameters"].keys()) + "is formatted differently.")
         print("This is formatted differently.")
 
-def main():
-    all_dicts = get_all_file_dicts()
+def createDataframes() -> dict:
+    """create dataframes from JSON data"""
 
+    all_dicts = get_all_file_dicts()
+    # print("all dicts:", all_dicts)
     overall_df_list = []
     points_df_list = []
 
@@ -96,28 +124,87 @@ def main():
 
     overall_df = pd.concat(overall_df_list).reset_index(drop=True)
     points_df = pd.concat(points_df_list).reset_index(drop=True)
+    return {"overall": overall_df, "points": points_df}
 
-    points_df["quote_text"] = points_df["quote_text"].str.lower()
-    #TODO: function that makes it lowercase, takes in a points df and returns it as lowercase
 
-    print(points_df.head()["quote_text"])
+def strip_html_tags(html_string) :
+    "takes in an html string and returns the string witch certain characters stripped"
+    return re.sub("<.*?>", "", str(html_string))
 
+def points_moderation_filter(df):
+    "checks if the points column needs moderation"
+    return df.loc[df['needs_moderation'] == False]
+    
+def remove_non_alphanumeric_chars(str):
+    return re.sub("[^[:alnum:] ]", "", str)
+
+def clean_points_df(df):
+    "for every single row in a dataframe we wanna apply a cleaning step to the quotes column"
+    df['quote_text'] = df['quote_text'].apply(strip_html_tags)
+    df['quote_text'] = df['quote_text'].apply(remove_non_alphanumeric_chars)
+    df['quote_text'] = df['quote_text'].apply(strip_white_space)
+
+    df = points_moderation_filter(df)
+    df = remove_empty_quote_text_points(df)
+    df = lowercase_text(df)
+
+    return df
+    "takes in a df, returns a df with a clean quote text column"
+    #C:\Users\jaden\OneDrive\Documents\Coding_Projects>python Terms-and-Conditions-Scrape-R/python/script.py
+
+def remove_empty_quote_text_points(df):
+    """returns dataframes that arent blank"""
+    return df.loc[df['quote_text'] != ""]
+
+def strip_white_space(str):
+    return str.strip()
+
+def lowercase_text(df):
+    df['quote_text'] = df['quote_text'].str.lower()
+    return df
+
+# def tokenize_data(df):
+#     df['tokenized'] = df.apply(lambda row: nltk.word_tokenize(row['quote_text']), axis=1)
+#     return df
+
+# def filtered_tokenized_data(list):
+#     #want it to go through each row of the tokenized column and remove stop words from each value
+#     filtered_sentence = [w for w in list if not w.lower() in stop_words]
+#     return filtered_sentence
+
+# def apply_filtered_tokenized_data(df):
+#     df["tokenized"] = df["tokenized"].apply(filtered_tokenized_data)
+#     return df
+
+def count_vectorize(df):
+    vectorizer = CountVectorizer() #tokenizes and counts
+    x = vectorizer.fit_transform(df["quote_text"]) #returns document term vectorizer matrix
+    return x
+
+def main():
+    dfs = createDataframes()
+    dfs["points"] = clean_points_df(dfs["points"])
+    print(dfs["points"]["quote_text"])
+    print(dfs["points"]["title"])
+    # token_data = tokenize_data(dfs["points"])
+    # print(token_data)
+    
+    # filtered_token_data = apply_filtered_tokenized_data(token_data)
+    # print(filtered_token_data)
+
+    count_vectorizer = count_vectorize(dfs["points"])
+    print(count_vectorizer)
+    # write code you are running here!!!
 
 if __name__ == "__main__":
     main()
 
-"""
-for (json in all_json_data) {
-  slug <- json$parameters$`_source`$slug[[1]]
-  list_of_overall_dfs[[slug]] <- retrieve_overall_data_from_json(json)
-  list_of_point_dfs[[slug]] <- retrieve_points_data_from_json(json, slug)
-}
-overall_df <-
-  map_df(list_of_overall_dfs, function(df) {
-    df
-  })
-points_df <-
-  map_df(list_of_point_dfs, function(df) {
-    df
-  })
-"""
+# Data: "cleaned" terms & conditions text
+# Model: Train on our data, and find the right bullet points to attach to a given terms & conditions
+    # Labels: "This is good", "This is bad"
+    # Good/bad bullet point is a label for terms & conditions
+    # You can have more than one label for a given terms & conditions
+
+    # Easiest case is binary labels - good or bad
+# Output: generate a bullet list of good and bad points about a terms & conditions
+
