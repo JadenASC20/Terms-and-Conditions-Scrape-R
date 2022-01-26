@@ -24,27 +24,36 @@ import urllib.request, json
 import ssl
 from tqdm import tqdm
 
+from ratelimiter import RateLimiter
+
+rate_limiter = RateLimiter(max_calls=10, period=1)
 #TODO: use new url for download.py and encorporate pagination if present,
 #TODO: maybe only download data from the last modified date, like a functiont that checks if it needs to update
 
 def download_data():
     ssl._create_default_https_context = ssl._create_unverified_context
-    with urllib.request.urlopen("http://api.tosdr.org/all-services/v1/") as url:
+    tosdr_url = "https://api.tosdr.org/service/v1/"
+    with urllib.request.urlopen(tosdr_url) as url:
         all_services = json.loads(url.read().decode())["parameters"]["services"]
 
     for service in tqdm(all_services):
-        slug = service["slug"]
-        endpoint = "https://api.tosdr.org/rest-service/v1/" + slug + ".json"
-        try:
-            with urllib.request.urlopen(endpoint) as url:
-                service_json = json.loads(url.read().decode())
-                with open("data-raw/" + slug + ".json", 'w', encoding='utf-8') as f:
-                    json.dump(service_json, f, ensure_ascii=False, indent=4)
+        with rate_limiter:
+            slug = service["slug"]
+            reviewed = service["is_comprehensively_reviewed"]
+            if reviewed == True:
+                
+                endpoint = tosdr_url + "?service=" + slug
+                try:
+                    with urllib.request.urlopen(endpoint) as url:
+                        service_json = json.loads(url.read().decode())
+                        with open("data-raw/" + slug + ".json", 'w', encoding='utf-8') as f:
+                            json.dump(service_json, f, ensure_ascii=False, indent=4)
 
-        except:
-            print("ERROR OCURRED!!!!")
-            print(endpoint)
-            with open('error.txt', 'a') as the_file:
-                the_file.write(endpoint)          
+                except:
+                    print("ERROR OCURRED!!!!")
+                    print(endpoint)
+                    with open('error.txt', 'a') as the_file:
+                        the_file.write(endpoint)   
+
 if __name__ == "__main__":
     download_data() 
