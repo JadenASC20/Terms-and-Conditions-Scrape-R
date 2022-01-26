@@ -22,9 +22,14 @@ import nltk
 nltk.download('punkt')
 from nltk.corpus import stopwords
 nltk.download('stopwords')
-print(stopwords.words('english'))
+
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+
+# print(stopwords.words('english'))
 stop_words = set(stopwords.words("english"))
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn import metrics
 
 import pandas as pd
 from tqdm import tqdm
@@ -72,9 +77,9 @@ def retrieve_points_data_from_json(input_json: dict, slug: str) -> pd.DataFrame:
         return pd.concat(df_list).reset_index(drop=True)
 
 
-def get_all_file_dicts() -> None:
+def get_all_file_dicts():
     """Collect dicts for all files into a list."""
-    all_json_file_paths = glob.glob('Terms-and-Conditions-Scrape-R/data-raw/*.json')
+    all_json_file_paths = glob.glob('data-raw/*.json')
     all_dicts = []
     for file_path in all_json_file_paths:
         with open(file_path, "r", encoding="utf8") as fp:
@@ -89,14 +94,14 @@ def get_slug(input_dict: dict) -> str:
     """Get slug from input dict, which can have multiple formats."""
 
     # checks if the parameters is a key in the input dictionary
-    if "parameters" in input_dict.keys():
+    if "parameters" in input_dict:
 
         # checks if the slug is a key in the dictionary input
-        if "slug" in input_dict["parameters"].keys():
+        if "slug" in input_dict["parameters"]:
             return input_dict["parameters"]["slug"][0]
         # checks if the source exists, and if the slug exists in the source
-        elif "_source" in input_dict["parameters"].keys():
-            if "slug" in input_dict["parameters"]["_source"].keys():
+        elif "_source" in input_dict["parameters"]:
+            if "slug" in input_dict["parameters"]["_source"]:
                 return input_dict["parameters"]["_source"]["slug"][0]
 
     else:
@@ -111,11 +116,11 @@ def createDataframes() -> dict:
     # print("all dicts:", all_dicts)
     overall_df_list = []
     points_df_list = []
-
+    
     for company_dict in tqdm(all_dicts):
         slug = get_slug(company_dict)
 
-        if "parameters" in company_dict.keys():
+        if "parameters" in company_dict:
             if "_source" in company_dict["parameters"]:
                 sub_overall_df = retrieve_overall_data_from_json(company_dict, slug)
                 sub_points_df = retrieve_points_data_from_json(company_dict, slug)
@@ -140,12 +145,16 @@ def remove_non_alphanumeric_chars(str):
 
 def clean_points_df(df):
     "for every single row in a dataframe we wanna apply a cleaning step to the quotes column"
+    print("The current dimensions before cleaning",df.shape)
     df['quote_text'] = df['quote_text'].apply(strip_html_tags)
     df['quote_text'] = df['quote_text'].apply(remove_non_alphanumeric_chars)
     df['quote_text'] = df['quote_text'].apply(strip_white_space)
-
+    df = filter_neutral_and_blocker(df)
+    print("filter neutral and blocker", df.shape)
     df = points_moderation_filter(df)
+    print("points moderation filter", df.shape)
     df = remove_empty_quote_text_points(df)
+    print("remove empty quote text points", df.shape)
     df = lowercase_text(df)
 
     return df
@@ -163,6 +172,14 @@ def lowercase_text(df):
     df['quote_text'] = df['quote_text'].str.lower()
     return df
 
+def return_outcome(df):
+    return df["classification"].eq("good").mul(1)
+
+
+def filter_neutral_and_blocker(df):
+    return df[df['classification'].isin(["good", "bad"])]
+
+    
 # def tokenize_data(df):
 #     df['tokenized'] = df.apply(lambda row: nltk.word_tokenize(row['quote_text']), axis=1)
 #     return df
@@ -181,20 +198,30 @@ def count_vectorize(df):
     x = vectorizer.fit_transform(df["quote_text"]) #returns document term vectorizer matrix
     return x
 
+def model(df, outcome):
+    # splitting the bag of words matrix with counts and outcome (good/bad binary) and uses 25% as testing data
+    # For the models performance, X_Train is the bag of words matrix thats gonna be used for the models learning
+    # 
+    X_train, X_test, y_train, y_test = train_test_split(df, outcome, test_size = 0.25, random_state = 0)
+    logreg = LogisticRegression()
+
+    # fit the model with data
+    logreg.fit(X_train,y_train)
+    y_pred=logreg.predict(X_test)
+
+    cnf_matrix = metrics.confusion_matrix(y_test, y_pred)
+    print(cnf_matrix)
+    print("Accuracy:",metrics.accuracy_score(y_test, y_pred))
+
+
 def main():
     dfs = createDataframes()
-    dfs["points"] = clean_points_df(dfs["points"])
-    print(dfs["points"]["quote_text"])
-    print(dfs["points"]["title"])
-    # token_data = tokenize_data(dfs["points"])
-    # print(token_data)
-    
+    points_df = clean_points_df(dfs["points"])
+    outcome = return_outcome(points_df)
     # filtered_token_data = apply_filtered_tokenized_data(token_data)
-    # print(filtered_token_data)
-
-    count_vectorizer = count_vectorize(dfs["points"])
-    print(count_vectorizer)
+    count_vectorizer = count_vectorize(points_df)
     # write code you are running here!!!
+    model(count_vectorizer, outcome)
 
 if __name__ == "__main__":
     main()
