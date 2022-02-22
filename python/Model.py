@@ -19,9 +19,9 @@ import glob
 import json
 import nltk
 
-nltk.download('punkt')
+# nltk.download('punkt')
 from nltk.corpus import stopwords
-nltk.download('stopwords')
+# nltk.download('stopwords')
 
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
@@ -61,14 +61,14 @@ def retrieve_points_data_from_json(input_json: dict, slug: str) -> pd.DataFrame:
         pd.DataFrame({
             "slug": [slug],
             "point_id": [point["id"]],
-            "needs_moderation": [point["needsModeration"]],
+            "needs_moderation": [point.get("needsModeration")],
             "quote_text": [point.get("quote")],  # TODO: check nulls
-            "case_id": [point["case"]["id"]],
-            "title": [point["case"]["title"]],
-            "classification": [point["case"]["classification"]],
-            "score": [point["case"]["score"]],
-            "created_at": [point["case"]["created_at"]],
-            "updated_at": [point["case"]["updated_at"]],
+            "case_id": [point.get("case").get("id") if point.get("case") != None else None],
+            "title": [point.get("case").get("title") if point.get("case") != None else None],
+            "classification": [point.get("case").get("classification") if point.get("case") != None else None],
+            "score": [point.get("case").get("score") if point.get("case") != None else None],
+            "created_at": [point.get("case").get("created_at") if point.get("case") != None else None],
+            "updated_at": [point.get("case").get("updated_at") if point.get("case") != None else None],
         })
         for point in points
     ]
@@ -92,17 +92,25 @@ def get_all_file_dicts():
 def get_slug(input_dict: dict) -> str:
     #the arrow -> tells us the data type that is returned
     """Get slug from input dict, which can have multiple formats."""
-
     # checks if the parameters is a key in the input dictionary
     if "parameters" in input_dict:
 
         # checks if the slug is a key in the dictionary input
+    
         if "slug" in input_dict["parameters"]:
-            return input_dict["parameters"]["slug"][0]
+            if isinstance(input_dict["parameters"]["slug"],list):
+                return input_dict["parameters"]["slug"][0]
+            else:
+                return input_dict["parameters"]["slug"]
+
         # checks if the source exists, and if the slug exists in the source
         elif "_source" in input_dict["parameters"]:
             if "slug" in input_dict["parameters"]["_source"]:
-                return input_dict["parameters"]["_source"]["slug"][0]
+                if isinstance(input_dict["parameters"]["_source"]["slug"],list):
+                    return input_dict["parameters"]["_source"]["slug"][0]
+                else:
+                    return input_dict["parameters"]["_source"]["slug"]
+
 
     else:
         #TODO: investigate further
@@ -113,18 +121,22 @@ def createDataframes() -> dict:
     """create dataframes from JSON data"""
 
     all_dicts = get_all_file_dicts()
+    
     # print("all dicts:", all_dicts)
     overall_df_list = []
     points_df_list = []
     
     for company_dict in tqdm(all_dicts):
         slug = get_slug(company_dict)
-
+        # print(slug)
         if "parameters" in company_dict:
             if "_source" in company_dict["parameters"]:
                 sub_overall_df = retrieve_overall_data_from_json(company_dict, slug)
                 sub_points_df = retrieve_points_data_from_json(company_dict, slug)
                 overall_df_list.append(sub_overall_df)
+                points_df_list.append(sub_points_df)
+            elif "points" in company_dict["parameters"]:
+                sub_points_df = retrieve_points_data_from_json(company_dict, slug)
                 points_df_list.append(sub_points_df)
 
     overall_df = pd.concat(overall_df_list).reset_index(drop=True)
@@ -145,16 +157,16 @@ def remove_non_alphanumeric_chars(str):
 
 def clean_points_df(df):
     "for every single row in a dataframe we wanna apply a cleaning step to the quotes column"
-    print("The current dimensions before cleaning",df.shape)
+    # print("The current dimensions before cleaning",df.shape)
     df['quote_text'] = df['quote_text'].apply(strip_html_tags)
     df['quote_text'] = df['quote_text'].apply(remove_non_alphanumeric_chars)
     df['quote_text'] = df['quote_text'].apply(strip_white_space)
     df = filter_neutral_and_blocker(df)
-    print("filter neutral and blocker", df.shape)
+    # print("filter neutral and blocker", df.shape)
     df = points_moderation_filter(df)
-    print("points moderation filter", df.shape)
+    # print("points moderation filter", df.shape)
     df = remove_empty_quote_text_points(df)
-    print("remove empty quote text points", df.shape)
+    # print("remove empty quote text points", df.shape)
     df = lowercase_text(df)
 
     return df
@@ -199,10 +211,10 @@ def count_vectorize(df):
     return x
 
 def model(df, outcome):
-    # splitting the bag of words matrix with counts and outcome (good/bad binary) and uses 25% as testing data
+    # splitting the bag of words matrix with counts and outcome (good/bad binary) and uses 40% as testing data
     # For the models performance, X_Train is the bag of words matrix thats gonna be used for the models learning
     # 
-    X_train, X_test, y_train, y_test = train_test_split(df, outcome, test_size = 0.25, random_state = 0)
+    X_train, X_test, y_train, y_test = train_test_split(df, outcome, test_size = 0.4, random_state = 0)
     logreg = LogisticRegression()
 
     # fit the model with data
@@ -216,12 +228,16 @@ def model(df, outcome):
 
 def main():
     dfs = createDataframes()
+    points_df = dfs["points"]
+    # print(points_df[points_df['slug']=="twitpic"])
+
     points_df = clean_points_df(dfs["points"])
     outcome = return_outcome(points_df)
     # filtered_token_data = apply_filtered_tokenized_data(token_data)
     count_vectorizer = count_vectorize(points_df)
     # write code you are running here!!!
     model(count_vectorizer, outcome)
+
 
 if __name__ == "__main__":
     main()

@@ -38,6 +38,7 @@ def download_data():
 
     for service in tqdm(all_services):
         with rate_limiter:
+
             slug = service["slug"]
             reviewed = service["is_comprehensively_reviewed"]
             if reviewed == True:
